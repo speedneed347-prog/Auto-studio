@@ -1,0 +1,37 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // User profile: owner may read; only the trusted API writes.
+    match /users/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // Projects and every subcollection (documents/*, revisions/*): owner read-only.
+    // All writes go through the API (Admin SDK) which enforces validation and ownership.
+    match /projects/{projectId} {
+      allow read: if signedIn() && resource.data.ownerId == request.auth.uid;
+      allow write: if false;
+
+      match /{sub=**} {
+        allow read: if signedIn()
+          && get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId == request.auth.uid;
+        allow write: if false;
+      }
+    }
+
+    // Audit records are server-only.
+    match /auditLogs/{id} {
+      allow read, write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
